@@ -1,22 +1,21 @@
 import json
 import os
+import re
+import tarfile
 import zipfile
 from collections.abc import Generator
-from enum import Enum
 from pathlib import Path
-from typing import Any
-from typing import IO
+from typing import IO, Any
 
 from danswer.configs.app_configs import INDEX_BATCH_SIZE
 from danswer.configs.constants import DocumentSource
-from danswer.connectors.file.utils import check_file_ext_is_valid
-from danswer.connectors.file.utils import get_file_ext
-from danswer.connectors.interfaces import GenerateDocumentsOutput
-from danswer.connectors.interfaces import LoadConnector
-from danswer.connectors.models import Document
-from danswer.connectors.models import Section
+from danswer.connectors.file.utils import (TAR_MATCH_PATTERN,
+                                           check_file_ext_is_valid,
+                                           get_file_ext)
+from danswer.connectors.interfaces import (GenerateDocumentsOutput,
+                                           LoadConnector)
+from danswer.connectors.models import Document, Section
 from danswer.utils.logging import setup_logger
-
 
 logger = setup_logger()
 
@@ -32,6 +31,18 @@ def _get_files_from_zip(
                 yield os.path.basename(file_name), file
 
 
+def _get_files_from_tar(
+    tar_location: str | Path,
+) -> Generator[tuple[str, IO[Any]], None, None]:
+    with tarfile.open(tar_location, "r") as tar:
+        for member in tar.getmembers():
+            if member.isfile():
+                # Open the file in the tar archive
+                file = tar.extractfile(member)
+                if file is not None:
+                    yield os.path.basename(member.path), file
+
+
 def _open_files_at_location(
     file_path: str | Path,
 ) -> Generator[tuple[str, IO[Any]], Any, None]:
@@ -42,13 +53,15 @@ def _open_files_at_location(
     elif extension == ".txt":
         with open(file_path, "r") as file:
             yield os.path.basename(file_path), file
+    elif re.search(TAR_MATCH_PATTERN, file_path.parts[-1]):
+        yield from _get_files_from_tar(file_path)
     else:
         logger.warning(f"Skipping file '{file_path}' with extension '{extension}'")
 
 
 def _process_file(file_name: str, file: IO[Any]) -> list[Document]:
     extension = get_file_ext(file_name)
-    if not check_file_ext_is_valid(extension):
+    if not check_file_ext_is_valid(file_name):
         logger.warning(f"Skipping file '{file_name}' with extension '{extension}'")
         return []
 

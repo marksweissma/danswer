@@ -1,15 +1,16 @@
 import os
+import re
 import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Any
-from typing import IO
+from typing import IO, Any
 
 from danswer.configs.app_configs import FILE_CONNECTOR_TMP_STORAGE_PATH
 
+TAR_MATCH_PATTERN = r"\.tar\..*"
 _FILE_AGE_CLEANUP_THRESHOLD_HOURS = 24 * 7  # 1 week
-_VALID_FILE_EXTENSIONS = [".txt", ".zip"]
+_VALID_FILE_EXTENSIONS = [r".txt$", r".zip$", TAR_MATCH_PATTERN]
 
 
 def get_file_ext(file_path_or_name: str | Path) -> str:
@@ -17,8 +18,11 @@ def get_file_ext(file_path_or_name: str | Path) -> str:
     return extension
 
 
-def check_file_ext_is_valid(ext: str) -> bool:
-    return ext in _VALID_FILE_EXTENSIONS
+def check_file_ext_is_valid(location: str) -> bool:
+    return any(
+        re.search(extension_anchor, location)
+        for extension_anchor in _VALID_FILE_EXTENSIONS
+    )
 
 
 def write_temp_files(
@@ -35,8 +39,7 @@ def write_temp_files(
 
     file_paths: list[str] = []
     for file_name, file in files:
-        extension = get_file_ext(file_name)
-        if not check_file_ext_is_valid(extension):
+        if not check_file_ext_is_valid(file_name):
             raise ValueError(
                 f"Invalid file extension for file: '{file_name}'. Must be one of {_VALID_FILE_EXTENSIONS}"
             )
